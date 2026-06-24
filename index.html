@@ -2019,19 +2019,24 @@ async function fetchSummaryLOI() {
 
     const { data } = Papa.parse(text, { header: false, skipEmptyLines: false });
 
-    // Locate the header row (the one containing "LOI" or "loi period" / "loi revenue")
+    // Locate the header row — anchored on "LOI" OR "status" OR "stage" so that
+    // Deal Status / Deal Stage filtering still works even if LOI columns haven't
+    // been filled in yet.
     let headerIdx = -1;
     let colDeal = -1, colLOIRev = -1, colLOIPeriod = -1, colQoERev = -1, colQoEPeriod = -1, colCurRev = -1;
     let colStatus = -1, colStage = -1;
     for (let i = 0; i < Math.min(data.length, 15); i++) {
       const row = (data[i] || []).map(c => (c || '').toLowerCase().trim());
-      const hasLOI = row.some(c => c.includes('loi'));
-      if (hasLOI) {
+      const hasLOI    = row.some(c => c.includes('loi'));
+      const hasStatus = row.some(c => c.includes('status'));
+      const hasStage  = row.some(c => c.includes('stage'));
+      if (hasLOI || hasStatus || hasStage) {
         headerIdx = i;
         colDeal      = row.findIndex(c => (c.includes('client') || c.includes('deal')) && !c.includes('status') && !c.includes('stage'));
         if (colDeal === -1) colDeal = 1;   // default to Column B ("Client Deals")
         colStatus    = row.findIndex(c => c.includes('status'));
         colStage     = row.findIndex(c => c === 'stage' || c.includes('stage') || c.includes('deal stage') || c.includes('current stage'));
+        if (colStage === -1) colStage = 3;   // default to Column D ("Stage")
         colLOIPeriod = row.findIndex(c => c.includes('loi') && c.includes('period'));
         colLOIRev    = row.findIndex(c => c.includes('loi') && (c.includes('revenue') || c.includes('rev') || c.includes('adj')));
         if (colLOIRev === -1) colLOIRev = row.findIndex(c => c.includes('loi') && !c.includes('period'));
@@ -2044,8 +2049,11 @@ async function fetchSummaryLOI() {
         break;
       }
     }
-    if (headerIdx === -1 || (colLOIRev === -1 && colLOIPeriod === -1)) {
-      console.warn('[Dashboard] Summary tab: could not detect LOI columns');
+    // Bail out only if we couldn't even find a usable header row. LOI columns
+    // are optional from here on — Status/Stage-based active filtering and the
+    // canonical display-name mapping should still run without them.
+    if (headerIdx === -1) {
+      console.warn('[Dashboard] Summary tab: could not detect a header row (no LOI/Status/Stage columns found)');
       return;
     }
 
@@ -2116,6 +2124,7 @@ async function fetchSummaryLOI() {
     // back to showing all so the dashboard never goes unexpectedly blank.
     if (colStatus >= 0) {
       const activeSet = new Set(Object.keys(dealMeta).filter(d => dealMeta[d].active));
+      console.log('[Dashboard] Deal Status column found at col', colStatus, '— resolved active deals:', [...activeSet], '| all parsed statuses:', dealMeta);
       window._activeDeals = activeSet.size > 0 ? activeSet : null;
     } else {
       window._activeDeals = null;
