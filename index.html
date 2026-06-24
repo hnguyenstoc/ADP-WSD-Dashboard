@@ -2064,12 +2064,7 @@ async function fetchSummaryLOI() {
     const dealMeta = {};   // keyed by deal name → { active, statusRaw, stage }
     const dealDisplay = {};// keyed by deal name → exact "Client Deals" (Col B) text
     // A deal counts as active unless its status clearly says otherwise.
-    const isActiveStatus = (v) => {
-      v = (v || '').toLowerCase().trim();
-      if (!v) return false;
-      if (/in-?active|closed|dead|lost|pass|drop|withdraw|terminat|kill|declin|on\s*hold|\bhold\b|stall|paus/.test(v)) return false;
-      return /activ|live|open|ongoing|pursu|in\s*progress|in-progress|\bwip\b|current|under\s*loi|diligence|closing/.test(v) ? true : false;
-    };
+    const isActiveStatus = (v) => (v || '').toLowerCase().trim() === 'active';
     for (let i = headerIdx + 1; i < data.length; i++) {
       const row = data[i] || [];
       // Find the deal name — try colDeal first, else scan for any non-empty non-numeric
@@ -2115,10 +2110,10 @@ async function fetchSummaryLOI() {
 
     window._dealMeta = dealMeta;
     window._dealDisplayName = dealDisplay;
-    // Enforce active-only filtering only when a "deal status" column was found.
-    // Restrict to deals positively marked active. If a status column exists but
-    // zero deals resolved as active (e.g. a name-match miss), fall back to showing
-    // all so the dashboard never goes unexpectedly blank.
+    // Enforce active-only filtering only when a "Deal Status" column was found.
+    // Restrict to deals whose status reads exactly "Active". If a status column
+    // exists but zero deals resolved as active (e.g. a name-match miss), fall
+    // back to showing all so the dashboard never goes unexpectedly blank.
     if (colStatus >= 0) {
       const activeSet = new Set(Object.keys(dealMeta).filter(d => dealMeta[d].active));
       window._activeDeals = activeSet.size > 0 ? activeSet : null;
