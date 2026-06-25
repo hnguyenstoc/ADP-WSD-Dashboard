@@ -2034,8 +2034,14 @@ async function fetchSummaryLOI() {
         headerIdx = i;
         colDeal      = row.findIndex(c => (c.includes('client') || c.includes('deal')) && !c.includes('status') && !c.includes('stage'));
         if (colDeal === -1) colDeal = 1;   // default to Column B ("Client Deals")
-        colStatus    = row.findIndex(c => c.includes('status'));
-        colStage     = row.findIndex(c => c === 'stage' || c.includes('stage') || c.includes('deal stage') || c.includes('current stage'));
+        // ── Deal Status = Column C (index 2), the source-of-truth position. ──
+        // Prefer a header that explicitly reads "Deal Status"; otherwise pin to
+        // Column C. We deliberately do NOT grab the first arbitrary "...status"
+        // column, which could be an unrelated status field appearing earlier.
+        const explicitStatus = row.findIndex(c => c.includes('deal') && c.includes('status'));
+        colStatus    = explicitStatus >= 0 ? explicitStatus : 2;   // Column C
+        // ── Stage = the "Stage" column (Column D by default). ──
+        colStage     = row.findIndex(c => c === 'stage' || c.includes('deal stage') || c.includes('current stage') || c.includes('stage'));
         if (colStage === -1) colStage = 3;   // default to Column D ("Stage")
         colLOIPeriod = row.findIndex(c => c.includes('loi') && c.includes('period'));
         colLOIRev    = row.findIndex(c => c.includes('loi') && (c.includes('revenue') || c.includes('rev') || c.includes('adj')));
@@ -2528,8 +2534,16 @@ function renderKPIs(monthly) {
     set('kpiStage',    stg || 'n/a');
     set('kpiStageSub', stg ? 'Current stage' : 'No stage on file');
   } else if (dealsInScope.length > 1) {
-    set('kpiStage',    `${dealsInScope.length} deals`);
-    set('kpiStageSub', 'Select one deal to view stage');
+    // If every active deal in scope shares the same Stage, surface it directly;
+    // otherwise prompt the user to pick a single deal.
+    const stages = [...new Set(dealsInScope.map(d => (meta[d] && meta[d].stage || '').trim()).filter(Boolean))];
+    if (stages.length === 1) {
+      set('kpiStage',    stages[0]);
+      set('kpiStageSub', `All ${dealsInScope.length} active deals`);
+    } else {
+      set('kpiStage',    `${dealsInScope.length} deals`);
+      set('kpiStageSub', 'Select one deal to view stage');
+    }
   } else {
     set('kpiStage',    '—');
     set('kpiStageSub', 'Current stage');
