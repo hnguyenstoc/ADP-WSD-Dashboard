@@ -1132,9 +1132,14 @@ const SHEET_ID = '1BUihurvWOH_P9VWUezPdvAtm-BvulTqy4TaKeqQrk6M';
   Tabs with no data will be silently skipped (shown in status bar if they fail).
 */
 const DEALS = [
-  { name: 'CT Dental Group', tab: 'Import-CT Dental Group', granularity: 'daily' },
-  { name: 'Valhalla',        tab: 'Import-Valhalla',        granularity: 'daily' },
-  { name: 'CDC',             tab: 'Import-CDC',             granularity: 'daily' },
+  // `aliases` map the exact "Client Deals" (Column B) text in the Summary tab to
+  // the internal deal name when they differ (e.g. acronyms). Matching otherwise
+  // relies on substring overlap, which can't connect "CDC" -> "Children's Dental
+  // Care". Add the Summary spelling here whenever it isn't a clear superset of
+  // the internal name.
+  { name: 'CT Dental Group', tab: 'Import-CT Dental Group', granularity: 'daily', aliases: ['CT Dental'] },
+  { name: 'Valhalla',        tab: 'Import-Valhalla',        granularity: 'daily', aliases: ['Valhalla Dentistry'] },
+  { name: 'CDC',             tab: 'Import-CDC',             granularity: 'daily', aliases: ["Children's Dental Care", 'Childrens Dental Care'] },
 ];
 
 /* Column synonym map — checked in order, first match wins (case-insensitive after normMap) */
@@ -2066,9 +2071,17 @@ async function fetchSummaryLOI() {
     // Build fuzzy deal matcher
     function fuzzyMatch(rawName) {
       const clean = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!clean) return null;
       for (const deal of DEALS) {
-        const d = deal.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (clean === d || clean.includes(d) || d.includes(clean)) return deal.name;
+        // Check the internal name and any configured aliases. An alias lets the
+        // Summary's "Client Deals" spelling (e.g. "Children's Dental Care") map
+        // to an internal acronym name (e.g. "CDC").
+        const candidates = [deal.name, ...(deal.aliases || [])];
+        for (const cand of candidates) {
+          const d = (cand || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (!d) continue;
+          if (clean === d || clean.includes(d) || d.includes(clean)) return deal.name;
+        }
       }
       return null;
     }
@@ -2124,15 +2137,20 @@ async function fetchSummaryLOI() {
 
     window._dealMeta = dealMeta;
     window._dealDisplayName = dealDisplay;
-    // Enforce active-only filtering only when a "Deal Status" column was found.
-    // Restrict to deals whose status reads exactly "Active". If a status column
-    // exists but zero deals resolved as active (e.g. a name-match miss), fall
-    // back to showing all so the dashboard never goes unexpectedly blank.
-    if (colStatus >= 0) {
+    // Active-only filtering. We enforce it strictly whenever the Deal Status
+    // column was found AND we resolved at least one Summary row to a known deal.
+    // In that case only deals reading exactly "Active" are shown — a deal that is
+    // Inactive, or absent from the Summary entirely, is excluded. We ONLY fall
+    // back to showing everything when matching resolved nothing at all (Summary
+    // failed to load / total name-match miss), so the dashboard never goes blank
+    // on a load error — but an empty active set is otherwise respected.
+    const matchedAny = Object.keys(dealMeta).length > 0;
+    if (colStatus >= 0 && matchedAny) {
       const activeSet = new Set(Object.keys(dealMeta).filter(d => dealMeta[d].active));
-      console.log('[Dashboard] Deal Status column found at col', colStatus, '— resolved active deals:', [...activeSet], '| all parsed statuses:', dealMeta);
-      window._activeDeals = activeSet.size > 0 ? activeSet : null;
+      console.log('[Dashboard] Deal Status col', colStatus, '— active:', [...activeSet], '| all parsed:', dealMeta);
+      window._activeDeals = activeSet;   // may be empty → show no deals (strict)
     } else {
+      console.warn('[Dashboard] Active filter not enforced (no status col or no Summary rows matched) — showing all deals');
       window._activeDeals = null;
     }
     window._summaryLoaded = true;
